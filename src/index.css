@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom fonts */
+.font-orbitron {
+  font-family: 'Orbitron', monospace;
+}
+
+.font-rajdhani {
+  font-family: 'Rajdhani', sans-serif;
+}
+
+.font-press-start-2p {
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* Game canvas pixel art styling */
+.game-canvas {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* Custom animations */
+@keyframes gradient {
+  0%, 100% {
+    background-size: 200% 200%;
+    background-position: left center;
+  }
+  50% {
+    background-size: 200% 200%;
+    background-position: right center;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient 3s ease-in-out infinite;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Selection color */
+::selection {
+  background-color: #0ea5e9;
+  color: white;
+}
+
+/* Focus styles */
+button:focus,
+a:focus {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}
+
+/* Disable text selection on buttons */
+button {
+  user-select: none;
+}
+
+/* Image loading optimization */
+img {
+  image-rendering: auto;
+  image-rendering: crisp-edges;
+  image-rendering: -webkit-optimize-contrast;
+}
