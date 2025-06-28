@@ -42,7 +42,7 @@ function App() {
         <Features />
         <GameSpecs />
         <Screenshots />
-        <Download />
+        <Download onPlayGame={handlePlayGame} />
         <Footer />
       </div>
     </div>

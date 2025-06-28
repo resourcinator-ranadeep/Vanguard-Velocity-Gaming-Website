@@ -22,6 +22,209 @@
   image-rendering: crisp-edges;
 }
 
+/* 3D Tank Logo Styles */
+.tank-logo-container {
+  perspective: 1000px;
+  width: 50px;
+  height: 40px;
+  position: relative;
+}
+
+.tank-3d {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  animation: tankFloat 4s ease-in-out infinite;
+}
+
+@keyframes tankFloat {
+  0%, 100% { transform: rotateY(-15deg) rotateX(5deg) translateY(0px); }
+  50% { transform: rotateY(-15deg) rotateX(5deg) translateY(-2px); }
+}
+
+/* Tank Body */
+.tank-body {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-style: preserve-3d;
+}
+
+.tank-body-main {
+  width: 32px;
+  height: 16px;
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 50%, #1a202c 100%);
+  border: 1px solid #4fd1c7;
+  border-radius: 2px;
+  position: relative;
+}
+
+.tank-body-side {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 4px;
+  height: 16px;
+  background: linear-gradient(90deg, #2d3748 0%, #1a202c 100%);
+  transform: rotateY(90deg);
+  transform-origin: left;
+}
+
+.tank-body-top {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 32px;
+  height: 4px;
+  background: linear-gradient(180deg, #4a5568 0%, #2d3748 100%);
+  transform: rotateX(90deg);
+  transform-origin: bottom;
+}
+
+/* Tank Turret */
+.tank-turret {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-style: preserve-3d;
+}
+
+.turret-main {
+  width: 20px;
+  height: 12px;
+  background: linear-gradient(135deg, #4a5568 0%, #2d3748 50%, #1a202c 100%);
+  border: 1px solid #4fd1c7;
+  border-radius: 2px;
+  position: relative;
+}
+
+.turret-side {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 3px;
+  height: 12px;
+  background: linear-gradient(90deg, #2d3748 0%, #1a202c 100%);
+  transform: rotateY(90deg);
+  transform-origin: left;
+}
+
+.turret-top {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 20px;
+  height: 3px;
+  background: linear-gradient(180deg, #4a5568 0%, #2d3748 100%);
+  transform: rotateX(90deg);
+  transform-origin: bottom;
+}
+
+/* Tank Cannon */
+.tank-cannon {
+  position: absolute;
+  bottom: 26px;
+  left: 65%;
+  width: 18px;
+  height: 3px;
+  background: linear-gradient(90deg, #4a5568 0%, #2d3748 100%);
+  border: 1px solid #4fd1c7;
+  border-radius: 1px;
+  transform: translateX(-50%);
+}
+
+/* Tank Tracks */
+.tank-tracks {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 8px;
+}
+
+.track {
+  position: absolute;
+  width: 4px;
+  height: 8px;
+  background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+  border: 1px solid #4fd1c7;
+  border-radius: 1px;
+}
+
+.track-left {
+  left: 0;
+}
+
+.track-right {
+  right: 0;
+}
+
+/* Neon Accents */
+.neon-accent {
+  position: absolute;
+  border-radius: 50%;
+  animation: neonPulse 2s ease-in-out infinite;
+}
+
+.accent-1 {
+  width: 3px;
+  height: 3px;
+  background: #4fd1c7;
+  box-shadow: 0 0 6px #4fd1c7, 0 0 12px #4fd1c7;
+  bottom: 18px;
+  left: 15px;
+  animation-delay: 0s;
+}
+
+.accent-2 {
+  width: 2px;
+  height: 2px;
+  background: #9f7aea;
+  box-shadow: 0 0 4px #9f7aea, 0 0 8px #9f7aea;
+  bottom: 22px;
+  right: 12px;
+  animation-delay: 0.7s;
+}
+
+.accent-3 {
+  width: 2px;
+  height: 2px;
+  background: #4fd1c7;
+  box-shadow: 0 0 4px #4fd1c7, 0 0 8px #4fd1c7;
+  bottom: 12px;
+  left: 25px;
+  animation-delay: 1.4s;
+}
+
+@keyframes neonPulse {
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% { 
+    opacity: 0.6;
+    transform: scale(1.2);
+  }
+}
+
+/* Hover effects */
+.tank-logo-container:hover .tank-3d {
+  animation-duration: 2s;
+}
+
+.tank-logo-container:hover .neon-accent {
+  animation-duration: 1s;
+}
+
+.tank-logo-container:hover .tank-cannon {
+  transform: translateX(-50%) translateX(2px);
+  transition: transform 0.3s ease;
+}
+
 /* Custom animations */
 @keyframes gradient {
   0%, 100% {

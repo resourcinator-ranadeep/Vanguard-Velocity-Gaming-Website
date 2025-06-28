@@ -1,9 +1,8 @@
 import React from 'react';
-import { Target, Github, Twitter, Mail, Heart } from 'lucide-react';
+import { Target, Twitter, Mail, Heart } from 'lucide-react';
 
 const Footer = () => {
   const socialLinks = [
-    { icon: <Github className="w-5 h-5" />, href: '#', label: 'GitHub' },
     { icon: <Twitter className="w-5 h-5" />, href: '#', label: 'Twitter' },
     { icon: <Mail className="w-5 h-5" />, href: '#', label: 'Contact' }
   ];
@@ -95,11 +94,28 @@ const Footer = () => {
 
         {/* Bottom Bar */}
         <div className="border-t border-gray-800 pt-8">
-          <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-            <div className="text-gray-400 text-sm">
-              © 2024 Vanguard Velocity. All rights reserved.
+          <div className="flex flex-col lg:flex-row justify-between items-center space-y-4 lg:space-y-0">
+            {/* Left side - Bolt Logo + Copyright */}
+            <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4">
+              <a 
+                href="https://bolt.new/" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block"
+              >
+                <img 
+                  src="/logotext_poweredby_360w.png" 
+                  alt="Powered by Bolt" 
+                  className="h-6 sm:h-7 md:h-8 hover:scale-105 transition-transform duration-300 cursor-pointer opacity-80 hover:opacity-100"
+                  title="Powered by Bolt - Click to visit bolt.new"
+                />
+              </a>
+              <div className="text-gray-400 text-sm text-center sm:text-left">
+                © 2024 Vanguard Velocity. All rights reserved.
+              </div>
             </div>
             
+            {/* Right side - Made with love */}
             <div className="flex items-center space-x-1 text-gray-400 text-sm">
               <span>Made with</span>
               <Heart className="w-4 h-4 text-red-500" />
