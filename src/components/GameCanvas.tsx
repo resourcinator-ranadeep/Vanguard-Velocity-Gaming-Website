@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, RotateCcw, Pause, Play, Settings, Target, RotateCw } from 'lucide-react';
+import { X, RotateCcw, Pause, Play, RotateCw, Smartphone } from 'lucide-react';
 
 interface GameCanvasProps {
   onClose: () => void;
@@ -13,7 +13,6 @@ interface GameObject {
   type: string;
   size?: 'small' | 'medium' | 'large';
   countedForMissile?: boolean;
-  isLowFlying?: boolean;
 }
 
 interface Missile {
@@ -41,43 +40,19 @@ interface Explosion {
   }>;
 }
 
-interface Tree {
+interface SciFiStructure {
   x: number;
   y: number;
   height: number;
-  trunkWidth: number;
-  crownRadius: number;
-  branches: Array<{
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
-    thickness: number;
-  }>;
-  leaves: Array<{
+  width: number;
+  type: 'crystal' | 'tower' | 'dome' | 'spire';
+  glowPhase: number;
+  energyNodes: Array<{
     x: number;
     y: number;
     size: number;
+    color: string;
   }>;
-  treeType: 'oak' | 'pine' | 'birch' | 'maple';
-}
-
-interface Building {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  type: 'house' | 'tower' | 'factory' | 'barn';
-  color: string;
-  windows: Array<{ x: number; y: number; width: number; height: number }>;
-}
-
-interface Mountain {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  peaks: Array<{ x: number; y: number }>;
 }
 
 const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
@@ -90,48 +65,59 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
   });
   const [gameOver, setGameOver] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [gameSpeed, setGameSpeed] = useState(4.0);
-  const [showSettings, setShowSettings] = useState(false);
-  const [initialSpeed, setInitialSpeed] = useState(4.0);
-  const [gameStarted, setGameStarted] = useState(false);
-  const [isPortrait, setIsPortrait] = useState(false);
+  const [gameSpeed, setGameSpeed] = useState(3.0);
+  const [initialSpeed, setInitialSpeed] = useState(3.0);
+  const [showSpeedSelector, setShowSpeedSelector] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(true);
 
-  // Check for mobile device and orientation
+  // Mobile detection and orientation checking
   useEffect(() => {
-    const checkMobileAndOrientation = () => {
-      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
-                            (window.innerWidth <= 768 && 'ontouchstart' in window);
-      const isPortraitMode = window.innerHeight > window.innerWidth;
-      
-      setIsMobile(isMobileDevice);
-      setIsPortrait(isPortraitMode && isMobileDevice);
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/.test(userAgent);
+      const isSmallScreen = window.innerWidth <= 768 && 'ontouchstart' in window;
+      return isMobileDevice || isSmallScreen;
     };
 
-    checkMobileAndOrientation();
-    window.addEventListener('resize', checkMobileAndOrientation);
-    window.addEventListener('orientationchange', () => {
-      setTimeout(checkMobileAndOrientation, 100); // Delay to ensure orientation change is complete
-    });
+    const checkOrientation = () => {
+      return window.innerWidth > window.innerHeight;
+    };
+
+    const updateMobileState = () => {
+      setIsMobile(checkMobile());
+      setIsLandscape(checkOrientation());
+    };
+
+    updateMobileState();
+
+    const handleResize = () => {
+      setTimeout(updateMobileState, 100);
+    };
+
+    const handleOrientationChange = () => {
+      setTimeout(updateMobileState, 100);
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleOrientationChange);
 
     return () => {
-      window.removeEventListener('resize', checkMobileAndOrientation);
-      window.removeEventListener('orientationchange', checkMobileAndOrientation);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleOrientationChange);
     };
   }, []);
 
-  // Game state - Increased initial speed for better gameplay
+  // Game state
   const gameState = useRef({
     tank: { x: 100, y: 280, width: 60, height: 40, velocityY: 0, onGround: true },
     obstacles: [] as GameObject[],
     missiles: [] as Missile[],
     explosions: [] as Explosion[],
-    trees: [] as Tree[],
-    buildings: [] as Building[],
-    mountains: [] as Mountain[],
+    sciFiStructures: [] as SciFiStructure[],
     lastObstacleX: 0,
     keys: { space: false, up: false },
-    gameSpeed: 4.0, // Increased from 3.0 to 4.0
+    gameSpeed: 3.0,
     frameCount: 0,
     timeOfDay: 0,
     dayNightCycle: 0,
@@ -140,14 +126,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     lastMissileTime: 0,
     missileTarget: null as GameObject | null,
     nextObstacleSpawn: 0,
-    minObstacleSpawnInterval: 60, // Reduced from 80 to 60 for more frequent obstacles
-    maxObstacleSpawnInterval: 180, // Reduced from 250 to 180
+    minObstacleSpawnInterval: 60,
+    maxObstacleSpawnInterval: 180,
     missileCount: 0,
     dodgedObstaclesCount: 0,
-    missilesReady: false,
-    sunMoonPosition: { x: 200, y: 80 },
-    environmentType: 'forest' as 'forest' | 'urban',
-    environmentTransition: 0
+    missilesReady: false
   });
 
   const CANVAS_WIDTH = 1200;
@@ -162,155 +145,44 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
   const MISSILES_TO_GAIN_ONE = 25;
   const MAX_MISSILES = 10;
   const OBSTACLE_SPAWN_DECREASE_RATE = 5;
-  const OBSTACLE_SPAWN_MIN = 30; // Reduced from 40 to 30
-  const MAX_GAME_SPEED = 10;
+  const OBSTACLE_SPAWN_MIN = 40;
 
-  // Initialize background elements
-  const initializeBackground = useCallback(() => {
-    // Initialize trees
-    const trees: Tree[] = [];
-    for (let i = 0; i < 30; i++) {
-      const treeTypes: Array<'oak' | 'pine' | 'birch' | 'maple'> = ['oak', 'pine', 'birch', 'maple'];
-      const treeType = treeTypes[Math.floor(Math.random() * treeTypes.length)];
+  // Initialize sci-fi structures for background
+  const initializeSciFiStructures = useCallback(() => {
+    const structures: SciFiStructure[] = [];
+    for (let i = 0; i < 25; i++) {
+      const types: Array<'crystal' | 'tower' | 'dome' | 'spire'> = ['crystal', 'tower', 'dome', 'spire'];
+      const type = types[Math.floor(Math.random() * types.length)];
       
-      const baseHeight = treeType === 'pine' ? 80 : 60;
-      const height = baseHeight + Math.random() * 40;
-      const trunkWidth = 8 + Math.random() * 6;
-      const crownRadius = treeType === 'pine' ? height * 0.3 : height * 0.4 + Math.random() * 10;
+      const baseHeight = type === 'spire' ? 100 : type === 'tower' ? 80 : 60;
+      const height = baseHeight + Math.random() * 50;
+      const width = type === 'crystal' ? 20 + Math.random() * 15 : 25 + Math.random() * 20;
       
-      const tree: Tree = {
-        x: i * 150 + Math.random() * 50,
+      const structure: SciFiStructure = {
+        x: i * 150 + Math.random() * 60,
         y: GROUND_Y - height,
         height,
-        trunkWidth,
-        crownRadius,
-        branches: [],
-        leaves: [],
-        treeType
-      };
-
-      // Generate branches
-      const branchCount = treeType === 'pine' ? 8 : 5 + Math.random() * 5;
-      for (let j = 0; j < branchCount; j++) {
-        const branchY = tree.y + height * 0.3 + (j / branchCount) * height * 0.4;
-        const branchLength = 15 + Math.random() * 20;
-        const angle = (Math.random() - 0.5) * Math.PI * 0.6;
-        
-        tree.branches.push({
-          startX: tree.x + trunkWidth / 2,
-          startY: branchY,
-          endX: tree.x + trunkWidth / 2 + Math.cos(angle) * branchLength,
-          endY: branchY + Math.sin(angle) * branchLength,
-          thickness: 2 + Math.random() * 3
-        });
-      }
-
-      // Generate leaves
-      const leafCount = treeType === 'pine' ? 20 : 15 + Math.random() * 10;
-      for (let j = 0; j < leafCount; j++) {
-        const angle = Math.random() * Math.PI * 2;
-        const distance = Math.random() * crownRadius;
-        tree.leaves.push({
-          x: tree.x + trunkWidth / 2 + Math.cos(angle) * distance,
-          y: tree.y + height * 0.2 + Math.sin(angle) * distance,
-          size: 3 + Math.random() * 4
-        });
-      }
-
-      trees.push(tree);
-    }
-
-    // Initialize buildings
-    const buildings: Building[] = [];
-    for (let i = 0; i < 20; i++) {
-      const buildingTypes: Array<'house' | 'tower' | 'factory' | 'barn'> = ['house', 'tower', 'factory', 'barn'];
-      const type = buildingTypes[Math.floor(Math.random() * buildingTypes.length)];
-      
-      let width, height, color;
-      switch (type) {
-        case 'house':
-          width = 60 + Math.random() * 40;
-          height = 80 + Math.random() * 40;
-          color = '#8B4513';
-          break;
-        case 'tower':
-          width = 40 + Math.random() * 20;
-          height = 120 + Math.random() * 80;
-          color = '#696969';
-          break;
-        case 'factory':
-          width = 80 + Math.random() * 60;
-          height = 100 + Math.random() * 50;
-          color = '#4A4A4A';
-          break;
-        case 'barn':
-          width = 70 + Math.random() * 50;
-          height = 90 + Math.random() * 30;
-          color = '#8B0000';
-          break;
-        default:
-          width = 60;
-          height = 80;
-          color = '#8B4513';
-      }
-
-      const building: Building = {
-        x: i * 200 + Math.random() * 100,
-        y: GROUND_Y - height,
         width,
-        height,
         type,
-        color,
-        windows: []
+        glowPhase: Math.random() * Math.PI * 2,
+        energyNodes: []
       };
 
-      // Generate windows
-      const windowRows = Math.floor(height / 25);
-      const windowCols = Math.floor(width / 20);
-      for (let row = 1; row < windowRows; row++) {
-        for (let col = 1; col < windowCols; col++) {
-          if (Math.random() > 0.3) {
-            building.windows.push({
-              x: building.x + col * 20,
-              y: building.y + row * 25,
-              width: 12,
-              height: 15
-            });
-          }
-        }
-      }
-
-      buildings.push(building);
-    }
-
-    // Initialize mountains
-    const mountains: Mountain[] = [];
-    for (let i = 0; i < 15; i++) {
-      const width = 200 + Math.random() * 300;
-      const height = 100 + Math.random() * 150;
-      const mountain: Mountain = {
-        x: i * 250,
-        y: GROUND_Y - height,
-        width,
-        height,
-        peaks: []
-      };
-
-      // Generate mountain peaks
-      const peakCount = 3 + Math.random() * 4;
-      for (let j = 0; j <= peakCount; j++) {
-        mountain.peaks.push({
-          x: mountain.x + (j / peakCount) * width,
-          y: mountain.y + Math.random() * height * 0.3
+      // Generate energy nodes
+      const nodeCount = 3 + Math.random() * 4;
+      for (let j = 0; j < nodeCount; j++) {
+        const colors = ['#00FFFF', '#FF00FF', '#00FF00', '#FFFF00', '#FF6600'];
+        structure.energyNodes.push({
+          x: structure.x + Math.random() * structure.width,
+          y: structure.y + Math.random() * structure.height,
+          size: 2 + Math.random() * 3,
+          color: colors[Math.floor(Math.random() * colors.length)]
         });
       }
 
-      mountains.push(mountain);
+      structures.push(structure);
     }
-
-    gameState.current.trees = trees;
-    gameState.current.buildings = buildings;
-    gameState.current.mountains = mountains;
+    gameState.current.sciFiStructures = structures;
   }, []);
 
   // Color interpolation function
@@ -348,169 +220,153 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     }
   };
 
-  const drawWithOutline = (ctx: CanvasRenderingContext2D, drawFunction: () => void, outlineColor: string = '#000000', lineWidth: number = 2) => {
+  const drawSciFiStructure = (ctx: CanvasRenderingContext2D, structure: SciFiStructure, timeOfDay: number) => {
+    const { x, y, height, width, type, glowPhase, energyNodes } = structure;
+    
+    // Update glow phase
+    structure.glowPhase += 0.02;
+    
+    const baseColors = {
+      crystal: { day: '#4A90E2', night: '#00FFFF' },
+      tower: { day: '#7B68EE', night: '#FF00FF' },
+      dome: { day: '#32CD32', night: '#00FF00' },
+      spire: { day: '#FF6347', night: '#FF4500' }
+    };
+    
+    const structureColor = interpolateColor(
+      baseColors[type].day,
+      baseColors[type].night,
+      timeOfDay
+    );
+    
+    // Draw structure based on type
     ctx.save();
-    ctx.strokeStyle = outlineColor;
-    ctx.lineWidth = lineWidth;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
     
-    // Draw outline
-    ctx.globalCompositeOperation = 'source-over';
-    drawFunction();
-    ctx.stroke();
+    switch (type) {
+      case 'crystal':
+        // Crystal formation
+        const gradient = ctx.createLinearGradient(x, y, x + width, y + height);
+        gradient.addColorStop(0, structureColor);
+        gradient.addColorStop(0.5, interpolateColor(structureColor, '#FFFFFF', 0.3));
+        gradient.addColorStop(1, interpolateColor(structureColor, '#000000', 0.3));
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.moveTo(x + width / 2, y);
+        ctx.lineTo(x + width, y + height * 0.7);
+        ctx.lineTo(x + width * 0.8, y + height);
+        ctx.lineTo(x + width * 0.2, y + height);
+        ctx.lineTo(x, y + height * 0.7);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Crystal facets
+        ctx.strokeStyle = interpolateColor(structureColor, '#FFFFFF', 0.5);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + width / 2, y);
+        ctx.lineTo(x + width / 2, y + height);
+        ctx.moveTo(x, y + height * 0.7);
+        ctx.lineTo(x + width, y + height * 0.7);
+        ctx.stroke();
+        break;
+        
+      case 'tower':
+        // Futuristic tower
+        const towerGradient = ctx.createLinearGradient(x, y, x + width, y);
+        towerGradient.addColorStop(0, interpolateColor(structureColor, '#000000', 0.3));
+        towerGradient.addColorStop(0.5, structureColor);
+        towerGradient.addColorStop(1, interpolateColor(structureColor, '#000000', 0.3));
+        
+        ctx.fillStyle = towerGradient;
+        ctx.fillRect(x, y, width, height);
+        
+        // Tower segments
+        for (let i = 0; i < 5; i++) {
+          const segmentY = y + (i / 5) * height;
+          ctx.strokeStyle = interpolateColor(structureColor, '#FFFFFF', 0.4);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x, segmentY);
+          ctx.lineTo(x + width, segmentY);
+          ctx.stroke();
+        }
+        break;
+        
+      case 'dome':
+        // Energy dome
+        const domeGradient = ctx.createRadialGradient(
+          x + width / 2, y + height, 0,
+          x + width / 2, y + height, width / 2
+        );
+        domeGradient.addColorStop(0, interpolateColor(structureColor, '#FFFFFF', 0.3));
+        domeGradient.addColorStop(0.7, structureColor);
+        domeGradient.addColorStop(1, interpolateColor(structureColor, '#000000', 0.5));
+        
+        ctx.fillStyle = domeGradient;
+        ctx.beginPath();
+        ctx.arc(x + width / 2, y + height, width / 2, Math.PI, 0);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Dome grid
+        ctx.strokeStyle = interpolateColor(structureColor, '#FFFFFF', 0.3);
+        ctx.lineWidth = 1;
+        for (let i = 1; i < 4; i++) {
+          ctx.beginPath();
+          ctx.arc(x + width / 2, y + height, (width / 2) * (i / 4), Math.PI, 0);
+          ctx.stroke();
+        }
+        break;
+        
+      case 'spire':
+        // Energy spire
+        const spireGradient = ctx.createLinearGradient(x, y, x, y + height);
+        spireGradient.addColorStop(0, interpolateColor(structureColor, '#FFFFFF', 0.5));
+        spireGradient.addColorStop(0.5, structureColor);
+        spireGradient.addColorStop(1, interpolateColor(structureColor, '#000000', 0.3));
+        
+        ctx.fillStyle = spireGradient;
+        ctx.beginPath();
+        ctx.moveTo(x + width / 2, y);
+        ctx.lineTo(x + width * 0.8, y + height * 0.3);
+        ctx.lineTo(x + width, y + height);
+        ctx.lineTo(x, y + height);
+        ctx.lineTo(x + width * 0.2, y + height * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        break;
+    }
     
-    // Draw fill
-    ctx.globalCompositeOperation = 'source-over';
-    drawFunction();
-    ctx.fill();
+    // Draw energy nodes with glow
+    energyNodes.forEach(node => {
+      const glowIntensity = 0.5 + 0.5 * Math.sin(glowPhase + node.x * 0.01);
+      
+      ctx.shadowColor = node.color;
+      ctx.shadowBlur = 10 * glowIntensity;
+      ctx.fillStyle = node.color;
+      ctx.globalAlpha = 0.8 + 0.2 * glowIntensity;
+      
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, node.size * glowIntensity, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    });
     
     ctx.restore();
   };
 
-  const drawDetailedTree = (ctx: CanvasRenderingContext2D, tree: Tree, timeOfDay: number) => {
-    const { x, y, height, trunkWidth, crownRadius, branches, leaves, treeType } = tree;
+  const drawSciFiBackground = (ctx: CanvasRenderingContext2D) => {
+    const { timeOfDay, backgroundOffset } = gameState.current;
     
-    const trunkColors = {
-      oak: { day: '#8B4513', night: '#654321' },
-      pine: { day: '#A0522D', night: '#704214' },
-      birch: { day: '#F5F5DC', night: '#D3D3D3' },
-      maple: { day: '#8B4513', night: '#654321' }
-    };
-    
-    const leafColors = {
-      oak: { day: '#228B22', night: '#1F5F1F' },
-      pine: { day: '#006400', night: '#004000' },
-      birch: { day: '#90EE90', night: '#5F8A5F' },
-      maple: { day: '#FF6347', night: '#CC4125' }
-    };
-    
-    const trunkColor = interpolateColor(
-      trunkColors[treeType].day,
-      trunkColors[treeType].night,
-      timeOfDay
-    );
-    
-    const leafColor = interpolateColor(
-      leafColors[treeType].day,
-      leafColors[treeType].night,
-      timeOfDay
-    );
-    
-    // Draw trunk with outline
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = trunkColor;
-      ctx.fillRect(x, y + height * 0.7, trunkWidth, height * 0.3);
-    }, '#000000', 1);
-    
-    // Draw branches
-    ctx.strokeStyle = interpolateColor(trunkColor, '#000000', 0.2);
-    branches.forEach(branch => {
-      ctx.lineWidth = branch.thickness;
-      ctx.beginPath();
-      ctx.moveTo(branch.startX, branch.startY);
-      ctx.lineTo(branch.endX, branch.endY);
-      ctx.stroke();
-    });
-    
-    // Draw crown with outline
-    if (treeType === 'pine') {
-      const layers = 4;
-      for (let i = 0; i < layers; i++) {
-        const layerY = y + (i / layers) * height * 0.7;
-        const layerRadius = crownRadius * (1 - i * 0.15);
-        
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = interpolateColor(leafColor, '#000000', i * 0.1);
-          ctx.beginPath();
-          ctx.moveTo(x + trunkWidth / 2, layerY);
-          ctx.lineTo(x + trunkWidth / 2 - layerRadius, layerY + layerRadius);
-          ctx.lineTo(x + trunkWidth / 2 + layerRadius, layerY + layerRadius);
-          ctx.closePath();
-        }, '#000000', 1);
-      }
-    } else {
-      drawWithOutline(ctx, () => {
-        ctx.fillStyle = leafColor;
-        ctx.beginPath();
-        ctx.arc(x + trunkWidth / 2, y + height * 0.3, crownRadius, 0, Math.PI * 2);
-      }, '#000000', 2);
-    }
-  };
-
-  const drawBuilding = (ctx: CanvasRenderingContext2D, building: Building, timeOfDay: number) => {
-    const { x, y, width, height, type, color, windows } = building;
-    
-    const buildingColor = interpolateColor(color, '#2F2F2F', timeOfDay);
-    
-    // Draw building with outline
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = buildingColor;
-      ctx.fillRect(x, y, width, height);
-    }, '#000000', 2);
-    
-    // Draw roof
-    if (type === 'house' || type === 'barn') {
-      drawWithOutline(ctx, () => {
-        ctx.fillStyle = interpolateColor('#8B0000', '#4A0000', timeOfDay);
-        ctx.beginPath();
-        ctx.moveTo(x - 5, y);
-        ctx.lineTo(x + width / 2, y - 20);
-        ctx.lineTo(x + width + 5, y);
-        ctx.closePath();
-      }, '#000000', 1);
-    }
-    
-    // Draw windows
-    windows.forEach(window => {
-      const windowColor = timeOfDay > 0.5 ? '#FFD700' : '#87CEEB';
-      drawWithOutline(ctx, () => {
-        ctx.fillStyle = windowColor;
-        ctx.fillRect(window.x, window.y, window.width, window.height);
-      }, '#000000', 1);
-    });
-    
-    // Draw door for houses
-    if (type === 'house') {
-      drawWithOutline(ctx, () => {
-        ctx.fillStyle = interpolateColor('#654321', '#2F2F2F', timeOfDay);
-        ctx.fillRect(x + width / 2 - 8, y + height - 25, 16, 25);
-      }, '#000000', 1);
-    }
-  };
-
-  const drawMountain = (ctx: CanvasRenderingContext2D, mountain: Mountain, timeOfDay: number) => {
-    const { x, y, width, height, peaks } = mountain;
-    
-    const mountainColor = interpolateColor('#8B7355', '#4A4A4A', timeOfDay);
-    
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = mountainColor;
-      ctx.beginPath();
-      ctx.moveTo(x, y + height);
-      
-      peaks.forEach((peak, index) => {
-        if (index === 0) {
-          ctx.lineTo(peak.x, peak.y);
-        } else {
-          ctx.lineTo(peak.x, peak.y);
-        }
-      });
-      
-      ctx.lineTo(x + width, y + height);
-      ctx.closePath();
-    }, '#000000', 2);
-  };
-
-  const drawBackground = (ctx: CanvasRenderingContext2D) => {
-    const { timeOfDay, backgroundOffset, environmentType } = gameState.current;
-    
-    // Sky gradient
+    // Sci-fi sky gradient
     const skyGradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    const dayTopColor = '#87CEEB';
-    const dayBottomColor = '#E0F6FF';
-    const nightTopColor = '#191970';
-    const nightBottomColor = '#483D8B';
+    const dayTopColor = '#1a1a2e';
+    const dayBottomColor = '#16213e';
+    const nightTopColor = '#0f0f23';
+    const nightBottomColor = '#16213e';
     
     const topColor = interpolateColor(dayTopColor, nightTopColor, timeOfDay);
     const bottomColor = interpolateColor(dayBottomColor, nightBottomColor, timeOfDay);
@@ -520,129 +376,256 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     ctx.fillStyle = skyGradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // Sun/Moon - keep within bounds
-    const cycleProgress = (gameState.current.dayNightCycle * 0.005) % (Math.PI * 2);
-    const celestialX = Math.max(50, Math.min(CANVAS_WIDTH - 50, 200 + Math.cos(cycleProgress) * 400));
-    const celestialY = Math.max(30, Math.min(150, 80 + Math.abs(Math.sin(cycleProgress)) * 50));
+    // Sci-fi stars/energy particles
+    ctx.fillStyle = timeOfDay > 0.3 ? '#00FFFF' : '#FFFFFF';
+    for (let i = 0; i < 50; i++) {
+      const x = (i * 47) % CANVAS_WIDTH;
+      const y = (i * 23) % (CANVAS_HEIGHT * 0.6);
+      const twinkle = 0.3 + 0.7 * Math.sin(gameState.current.frameCount * 0.02 + i);
+      ctx.globalAlpha = twinkle * (timeOfDay > 0.3 ? 1 : 0.5);
+      ctx.fillRect(x, y, 1, 1);
+    }
+    ctx.globalAlpha = 1;
     
-    gameState.current.sunMoonPosition = { x: celestialX, y: celestialY };
+    // Sci-fi sun/energy core
+    const celestialX = 200 + Math.cos(gameState.current.dayNightCycle * 0.01) * 400;
+    const celestialY = 80 + Math.sin(gameState.current.dayNightCycle * 0.01) * 30;
     
     if (timeOfDay < 0.5) {
-      // Sun with outline
-      drawWithOutline(ctx, () => {
-        ctx.fillStyle = '#FFD700';
-        ctx.beginPath();
-        ctx.arc(celestialX, celestialY, 25, 0, Math.PI * 2);
-      }, '#FFA500', 2);
+      // Energy sun
+      const sunGradient = ctx.createRadialGradient(celestialX, celestialY, 0, celestialX, celestialY, 30);
+      sunGradient.addColorStop(0, '#FFFF00');
+      sunGradient.addColorStop(0.3, '#FF6600');
+      sunGradient.addColorStop(0.7, '#FF0066');
+      sunGradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = sunGradient;
+      ctx.beginPath();
+      ctx.arc(celestialX, celestialY, 30, 0, Math.PI * 2);
+      ctx.fill();
       
-      // Sun rays
-      ctx.strokeStyle = '#FFD700';
-      ctx.lineWidth = 3;
+      // Energy rays
+      ctx.strokeStyle = '#FFFF00';
+      ctx.lineWidth = 2;
       for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2;
-        const startX = celestialX + Math.cos(angle) * 35;
-        const startY = celestialY + Math.sin(angle) * 35;
-        const endX = celestialX + Math.cos(angle) * 45;
-        const endY = celestialY + Math.sin(angle) * 45;
-        
+        const angle = (i / 8) * Math.PI * 2 + gameState.current.frameCount * 0.01;
+        const rayLength = 15 + 5 * Math.sin(gameState.current.frameCount * 0.05 + i);
         ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
+        ctx.moveTo(
+          celestialX + Math.cos(angle) * 35,
+          celestialY + Math.sin(angle) * 35
+        );
+        ctx.lineTo(
+          celestialX + Math.cos(angle) * (35 + rayLength),
+          celestialY + Math.sin(angle) * (35 + rayLength)
+        );
         ctx.stroke();
       }
     } else {
-      // Moon with outline
-      drawWithOutline(ctx, () => {
-        ctx.fillStyle = '#F5F5DC';
-        ctx.beginPath();
-        ctx.arc(celestialX, celestialY, 20, 0, Math.PI * 2);
-      }, '#D3D3D3', 2);
-      
-      // Moon craters
-      ctx.fillStyle = '#E6E6FA';
+      // Energy moon
+      const moonGradient = ctx.createRadialGradient(celestialX, celestialY, 0, celestialX, celestialY, 25);
+      moonGradient.addColorStop(0, '#00FFFF');
+      moonGradient.addColorStop(0.7, '#0066FF');
+      moonGradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = moonGradient;
       ctx.beginPath();
-      ctx.arc(celestialX - 5, celestialY - 5, 3, 0, Math.PI * 2);
-      ctx.arc(celestialX + 7, celestialY + 3, 2, 0, Math.PI * 2);
+      ctx.arc(celestialX, celestialY, 25, 0, Math.PI * 2);
       ctx.fill();
+      
+      // Moon energy rings
+      ctx.strokeStyle = '#00FFFF';
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 3; i++) {
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        ctx.arc(celestialX, celestialY, 25 + i * 8, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
     }
     
-    // Mountains (far background)
-    gameState.current.mountains.forEach(mountain => {
-      const parallaxX = mountain.x - backgroundOffset * 0.1;
-      if (parallaxX > -mountain.width && parallaxX < CANVAS_WIDTH + mountain.width) {
-        drawMountain(ctx, { ...mountain, x: parallaxX }, timeOfDay);
+    // Sci-fi mountains/alien landscape
+    ctx.fillStyle = interpolateColor('#2D1B69', '#1A1A2E', timeOfDay);
+    ctx.beginPath();
+    ctx.moveTo(-50, GROUND_Y);
+    // Create angular, crystalline mountain shapes
+    ctx.lineTo(80, GROUND_Y - 90);
+    ctx.lineTo(150, GROUND_Y - 70);
+    ctx.lineTo(220, GROUND_Y - 110);
+    ctx.lineTo(300, GROUND_Y - 85);
+    ctx.lineTo(380, GROUND_Y - 120);
+    ctx.lineTo(460, GROUND_Y - 95);
+    ctx.lineTo(540, GROUND_Y - 130);
+    ctx.lineTo(620, GROUND_Y - 100);
+    ctx.lineTo(700, GROUND_Y - 115);
+    ctx.lineTo(780, GROUND_Y - 80);
+    ctx.lineTo(860, GROUND_Y - 125);
+    ctx.lineTo(940, GROUND_Y - 90);
+    ctx.lineTo(1020, GROUND_Y - 105);
+    ctx.lineTo(1100, GROUND_Y - 75);
+    ctx.lineTo(CANVAS_WIDTH + 50, GROUND_Y);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Mountain energy veins
+    ctx.strokeStyle = interpolateColor('#00FFFF', '#FF00FF', timeOfDay);
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.5;
+    for (let i = 0; i < 10; i++) {
+      const x = i * 120;
+      const y = GROUND_Y - 50 - Math.random() * 60;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 50 + Math.random() * 30, y - 20 - Math.random() * 20);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    
+    // Sci-fi structures in background with parallax
+    gameState.current.sciFiStructures.forEach(structure => {
+      const parallaxX = structure.x - backgroundOffset * 0.3;
+      if (parallaxX > -100 && parallaxX < CANVAS_WIDTH + 100) {
+        drawSciFiStructure(ctx, { ...structure, x: parallaxX }, timeOfDay);
       }
     });
     
-    // Environment-specific background
-    if (environmentType === 'forest') {
-      gameState.current.trees.forEach(tree => {
-        const parallaxX = tree.x - backgroundOffset * 0.3;
-        if (parallaxX > -100 && parallaxX < CANVAS_WIDTH + 100) {
-          drawDetailedTree(ctx, { ...tree, x: parallaxX }, timeOfDay);
-        }
-      });
-    } else {
-      gameState.current.buildings.forEach(building => {
-        const parallaxX = building.x - backgroundOffset * 0.3;
-        if (parallaxX > -building.width && parallaxX < CANVAS_WIDTH + building.width) {
-          drawBuilding(ctx, { ...building, x: parallaxX }, timeOfDay);
-        }
-      });
-    }
-    
-    // Ground with outline
+    // Sci-fi ground with energy grid
     const groundGradient = ctx.createLinearGradient(0, GROUND_Y, 0, CANVAS_HEIGHT);
-    groundGradient.addColorStop(0, interpolateColor('#8FBC8F', '#2F4F2F', timeOfDay));
-    groundGradient.addColorStop(1, interpolateColor('#228B22', '#1F4F1F', timeOfDay));
+    groundGradient.addColorStop(0, interpolateColor('#1A1A2E', '#0F0F23', timeOfDay));
+    groundGradient.addColorStop(1, interpolateColor('#16213E', '#1A1A2E', timeOfDay));
     ctx.fillStyle = groundGradient;
     ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
     
-    // Ground line
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, GROUND_Y);
-    ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
-    ctx.stroke();
+    // Energy grid on ground
+    ctx.strokeStyle = interpolateColor('#00FFFF', '#FF00FF', timeOfDay);
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
+    
+    // Horizontal grid lines
+    for (let i = 0; i < 3; i++) {
+      const y = GROUND_Y + 10 + i * 15;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(CANVAS_WIDTH, y);
+      ctx.stroke();
+    }
+    
+    // Vertical grid lines with parallax
+    for (let i = 0; i < 20; i++) {
+      const x = (i * 60 - backgroundOffset * 0.5) % (CANVAS_WIDTH + 60);
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y);
+      ctx.lineTo(x, CANVAS_HEIGHT);
+      ctx.stroke();
+    }
+    
+    ctx.globalAlpha = 1;
   };
 
-  const drawTank = (ctx: CanvasRenderingContext2D) => {
+  const drawSciFiTank = (ctx: CanvasRenderingContext2D) => {
     const { tank } = gameState.current;
     
-    // Tank body with outline
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = '#4A5568';
-      ctx.fillRect(tank.x, tank.y, tank.width, tank.height);
-    }, '#000000', 2);
+    // Sci-fi tank body with energy core
+    const bodyGradient = ctx.createLinearGradient(tank.x, tank.y, tank.x + tank.width, tank.y + tank.height);
+    bodyGradient.addColorStop(0, '#2D3748');
+    bodyGradient.addColorStop(0.5, '#4A5568');
+    bodyGradient.addColorStop(1, '#1A202C');
     
-    // Tank tracks with outline
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = '#2D3748';
-      ctx.fillRect(tank.x - 3, tank.y + tank.height - 8, tank.width + 6, 12);
-    }, '#000000', 1);
+    ctx.fillStyle = bodyGradient;
+    ctx.fillRect(tank.x, tank.y, tank.width, tank.height);
     
-    // Tank turret with outline
+    // Energy outline
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(tank.x, tank.y, tank.width, tank.height);
+    
+    // Sci-fi tracks with energy
+    const trackGradient = ctx.createLinearGradient(tank.x - 3, tank.y + tank.height - 8, tank.x + tank.width + 6, tank.y + tank.height + 4);
+    trackGradient.addColorStop(0, '#1A202C');
+    trackGradient.addColorStop(0.5, '#2D3748');
+    trackGradient.addColorStop(1, '#1A202C');
+    
+    ctx.fillStyle = trackGradient;
+    ctx.fillRect(tank.x - 3, tank.y + tank.height - 8, tank.width + 6, 12);
+    
+    // Energy track lines
+    ctx.strokeStyle = '#FF00FF';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(tank.x - 3, tank.y + tank.height - 2);
+    ctx.lineTo(tank.x + tank.width + 3, tank.y + tank.height - 2);
+    ctx.moveTo(tank.x - 3, tank.y + tank.height + 2);
+    ctx.lineTo(tank.x + tank.width + 3, tank.y + tank.height + 2);
+    ctx.stroke();
+    
+    // Sci-fi turret with energy core
     const turretWidth = tank.width * 0.5;
     const turretHeight = tank.height * 0.6;
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = '#4A5568';
-      ctx.fillRect(tank.x + (tank.width - turretWidth) / 2, tank.y - turretHeight / 2, turretWidth, turretHeight);
-    }, '#000000', 2);
+    const turretGradient = ctx.createRadialGradient(
+      tank.x + (tank.width - turretWidth) / 2 + turretWidth / 2,
+      tank.y - turretHeight / 2 + turretHeight / 2,
+      0,
+      tank.x + (tank.width - turretWidth) / 2 + turretWidth / 2,
+      tank.y - turretHeight / 2 + turretHeight / 2,
+      turretWidth / 2
+    );
+    turretGradient.addColorStop(0, '#4A5568');
+    turretGradient.addColorStop(0.7, '#2D3748');
+    turretGradient.addColorStop(1, '#1A202C');
     
-    // Tank cannon with outline
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = '#2D3748';
-      ctx.fillRect(tank.x + tank.width, tank.y + tank.height / 2 - 3, tank.width * 0.4, 6);
-    }, '#000000', 1);
+    ctx.fillStyle = turretGradient;
+    ctx.fillRect(tank.x + (tank.width - turretWidth) / 2, tank.y - turretHeight / 2, turretWidth, turretHeight);
     
-    // Tank details
-    ctx.fillStyle = '#4FD1C7';
+    // Turret energy outline
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tank.x + (tank.width - turretWidth) / 2, tank.y - turretHeight / 2, turretWidth, turretHeight);
+    
+    // Sci-fi cannon with energy beam
+    const cannonGradient = ctx.createLinearGradient(tank.x + tank.width, tank.y + tank.height / 2 - 3, tank.x + tank.width + tank.width * 0.4, tank.y + tank.height / 2 + 3);
+    cannonGradient.addColorStop(0, '#2D3748');
+    cannonGradient.addColorStop(0.5, '#4A5568');
+    cannonGradient.addColorStop(1, '#00FFFF');
+    
+    ctx.fillStyle = cannonGradient;
+    ctx.fillRect(tank.x + tank.width, tank.y + tank.height / 2 - 3, tank.width * 0.4, 6);
+    
+    // Cannon energy outline
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tank.x + tank.width, tank.y + tank.height / 2 - 3, tank.width * 0.4, 6);
+    
+    // Energy core in center
+    const coreX = tank.x + tank.width / 2;
+    const coreY = tank.y + tank.height / 2;
+    const coreGlow = 0.5 + 0.5 * Math.sin(gameState.current.frameCount * 0.1);
+    
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 10 * coreGlow;
+    ctx.fillStyle = '#00FFFF';
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(coreX, coreY, 3 * coreGlow, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    
+    // Energy details
+    ctx.fillStyle = '#FF00FF';
     ctx.fillRect(tank.x + 8, tank.y + 8, 5, 5);
     ctx.fillRect(tank.x + tank.width - 13, tank.y + 8, 5, 5);
     
-    // Front armor
-    ctx.fillStyle = '#4FD1C7';
+    // Additional sci-fi details
+    ctx.fillStyle = '#00FFFF';
+    ctx.fillRect(tank.x + 5, tank.y + tank.height - 15, 3, 10);
+    ctx.fillRect(tank.x + tank.width - 8, tank.y + tank.height - 15, 3, 10);
+    
+    // Front energy shield
+    const shieldGradient = ctx.createLinearGradient(tank.x + tank.width - 5, tank.y + tank.height / 2 - 8, tank.x + tank.width - 2, tank.y + tank.height / 2 + 8);
+    shieldGradient.addColorStop(0, '#00FFFF');
+    shieldGradient.addColorStop(0.5, '#FF00FF');
+    shieldGradient.addColorStop(1, '#00FFFF');
+    
+    ctx.fillStyle = shieldGradient;
     ctx.fillRect(tank.x + tank.width - 5, tank.y + tank.height / 2 - 8, 3, 16);
   };
 
@@ -656,11 +639,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     const { obstacles, frameCount, nextObstacleSpawn, minObstacleSpawnInterval, maxObstacleSpawnInterval } = gameState.current;
     
     if (frameCount > nextObstacleSpawn) {
-      const types = ['wall', 'tank', 'jet', 'helicopter', 'infantry', 'lowFlying'];
+      const types = ['wall', 'tank', 'jet', 'helicopter', 'infantry'];
       const type = types[Math.floor(Math.random() * types.length)];
       const size = getObstacleSize(frameCount);
       
-      let width, height, y, isLowFlying = false;
+      let width, height, y;
       
       switch (type) {
         case 'wall':
@@ -676,25 +659,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
         case 'jet':
           width = size === 'small' ? 40 : size === 'medium' ? 60 : 80;
           height = size === 'small' ? 15 : size === 'medium' ? 25 : 35;
-          // Decreased height significantly - now much lower
-          y = size === 'small' ? 200 : size === 'medium' ? 180 : 160;
+          y = size === 'small' ? 150 : size === 'medium' ? 130 : 110;
           break;
         case 'helicopter':
           width = size === 'small' ? 35 : size === 'medium' ? 50 : 70;
           height = size === 'small' ? 25 : size === 'medium' ? 35 : 50;
-          // Decreased height significantly - now much lower
-          y = size === 'small' ? 220 : size === 'medium' ? 200 : 180;
+          y = size === 'small' ? 170 : size === 'medium' ? 150 : 130;
           break;
         case 'infantry':
           width = size === 'small' ? 20 : size === 'medium' ? 35 : 50;
           height = size === 'small' ? 25 : size === 'medium' ? 35 : 50;
           y = GROUND_Y - height;
-          break;
-        case 'lowFlying':
-          width = size === 'small' ? 50 : size === 'medium' ? 70 : 90;
-          height = size === 'small' ? 20 : size === 'medium' ? 30 : 40;
-          y = GROUND_Y - 60; // Fixed height for ducking
-          isLowFlying = true;
           break;
         default:
           width = 20;
@@ -702,10 +677,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
           y = GROUND_Y - height;
       }
       
-      // Improved distance calculation for better gameplay flow
-      const baseDistance = 250; // Reduced base distance
-      const variableDistance = frameCount < 1800 ? 200 : frameCount < 3600 ? 150 : 100; // More aggressive reduction
-      const distance = baseDistance + Math.random() * variableDistance;
+      const minDistance = 200 + (frameCount < 3000 ? 150 : frameCount < 6000 ? 100 : 50);
+      const maxDistance = 350 + (frameCount < 3000 ? 200 : frameCount < 6000 ? 150 : 100);
+      const distance = minDistance + Math.random() * (maxDistance - minDistance);
       
       const newObstacle: GameObject = {
         x: gameState.current.lastObstacleX + distance,
@@ -714,8 +688,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
         height,
         type,
         size,
-        countedForMissile: false,
-        isLowFlying
+        countedForMissile: false
       };
       
       obstacles.push(newObstacle);
@@ -726,202 +699,259 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     }
   };
 
-  const drawObstacle = (ctx: CanvasRenderingContext2D, obstacle: GameObject) => {
+  const drawSciFiObstacle = (ctx: CanvasRenderingContext2D, obstacle: GameObject) => {
     const { type, x, y, width, height, size } = obstacle;
+    const glowPhase = gameState.current.frameCount * 0.05;
     
     switch (type) {
       case 'wall':
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = '#8B4513';
-          ctx.fillRect(x, y, width, height);
-        }, '#000000', 2);
+        // Sci-fi energy barrier
+        const wallGradient = ctx.createLinearGradient(x, y, x + width, y + height);
+        wallGradient.addColorStop(0, '#FF00FF');
+        wallGradient.addColorStop(0.5, '#00FFFF');
+        wallGradient.addColorStop(1, '#FF00FF');
         
-        // Brick pattern
-        ctx.fillStyle = '#654321';
-        for (let i = 0; i < height; i += 20) {
-          ctx.fillRect(x, y + i, width, 2);
+        ctx.fillStyle = wallGradient;
+        ctx.fillRect(x, y, width, height);
+        
+        // Energy field lines
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.7;
+        for (let i = 0; i < height; i += 10) {
+          const offset = 2 * Math.sin(glowPhase + i * 0.1);
+          ctx.beginPath();
+          ctx.moveTo(x + offset, y + i);
+          ctx.lineTo(x + width + offset, y + i);
+          ctx.stroke();
         }
+        ctx.globalAlpha = 1;
+        
+        // Energy outline
+        ctx.strokeStyle = '#FFFF00';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, width, height);
         break;
         
       case 'tank':
-        const tankColor = size === 'small' ? '#8B0000' : size === 'medium' ? '#B22222' : '#DC143C';
+        // Sci-fi enemy tank
+        const enemyTankGradient = ctx.createLinearGradient(x, y, x + width, y + height);
+        enemyTankGradient.addColorStop(0, size === 'small' ? '#8B0000' : size === 'medium' ? '#B22222' : '#DC143C');
+        enemyTankGradient.addColorStop(0.5, '#FF0000');
+        enemyTankGradient.addColorStop(1, size === 'small' ? '#8B0000' : size === 'medium' ? '#B22222' : '#DC143C');
         
-        // Tank body with outline
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = tankColor;
-          ctx.fillRect(x, y, width, height);
-        }, '#000000', 2);
+        ctx.fillStyle = enemyTankGradient;
+        ctx.fillRect(x, y, width, height);
         
-        // Tank tracks
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = '#2F4F4F';
-          ctx.fillRect(x - 2, y + height - 5, width + 4, 8);
-        }, '#000000', 1);
+        // Energy outline
+        ctx.strokeStyle = '#FF0000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, width, height);
         
-        // Tank turret
-        const turretWidth = width * 0.6;
-        const turretHeight = height * 0.6;
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = tankColor;
-          ctx.fillRect(x + (width - turretWidth) / 2, y - turretHeight / 2, turretWidth, turretHeight);
-        }, '#000000', 1);
+        // Sci-fi tracks
+        ctx.fillStyle = '#2F4F4F';
+        ctx.fillRect(x - 2, y + height - 5, width + 4, 8);
         
-        // Tank cannon (facing left towards player tank)
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = '#2F4F4F';
-          ctx.fillRect(x - width * 0.4, y + height / 2 - 2, width * 0.4, 4);
-        }, '#000000', 1);
+        // Enemy turret
+        const enemyTurretWidth = width * 0.6;
+        const enemyTurretHeight = height * 0.6;
+        ctx.fillStyle = size === 'small' ? '#8B0000' : size === 'medium' ? '#B22222' : '#DC143C';
+        ctx.fillRect(x + (width - enemyTurretWidth) / 2, y - enemyTurretHeight / 2, enemyTurretWidth, enemyTurretHeight);
+        
+        // Enemy cannon facing left (toward player tank)
+        ctx.fillStyle = '#2F4F4F';
+        ctx.fillRect(x - width * 0.4, y + height / 2 - 2, width * 0.4, 4);
+        
+        // Enemy energy core
+        const enemyCoreGlow = 0.5 + 0.5 * Math.sin(glowPhase);
+        ctx.shadowColor = '#FF0000';
+        ctx.shadowBlur = 8 * enemyCoreGlow;
+        ctx.fillStyle = '#FF0000';
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        ctx.arc(x + width / 2, y + height / 2, 2 * enemyCoreGlow, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
         break;
         
       case 'jet':
-        const jetColor = size === 'small' ? '#4682B4' : size === 'medium' ? '#5F9EA0' : '#6495ED';
+        // Sci-fi fighter jet
+        const jetGradient = ctx.createLinearGradient(x, y, x + width, y + height);
+        jetGradient.addColorStop(0, size === 'small' ? '#4682B4' : size === 'medium' ? '#5F9EA0' : '#6495ED');
+        jetGradient.addColorStop(0.5, '#00FFFF');
+        jetGradient.addColorStop(1, size === 'small' ? '#4682B4' : size === 'medium' ? '#5F9EA0' : '#6495ED');
         
-        // Jet body (facing left)
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = jetColor;
-          ctx.fillRect(x, y + height / 3, width, height / 3);
-        }, '#000000', 2);
+        // Main body
+        ctx.fillStyle = jetGradient;
+        ctx.fillRect(x, y + height / 3, width, height / 3);
         
-        // Jet nose (pointing left)
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = jetColor;
-          ctx.beginPath();
-          ctx.moveTo(x, y + height / 2);
-          ctx.lineTo(x - 15, y + height / 2);
-          ctx.lineTo(x, y + height / 3);
-          ctx.lineTo(x, y + 2 * height / 3);
-          ctx.closePath();
-        }, '#000000', 1);
+        // Jet nose (pointing left toward tank)
+        ctx.beginPath();
+        ctx.moveTo(x, y + height / 2);
+        ctx.lineTo(x - 15, y + height / 2);
+        ctx.lineTo(x, y + height / 3);
+        ctx.lineTo(x, y + 2 * height / 3);
+        ctx.closePath();
+        ctx.fill();
         
         // Wings
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = jetColor;
-          ctx.fillRect(x + width / 3, y, width / 3, height);
-        }, '#000000', 1);
+        ctx.fillRect(x + width / 3, y, width / 3, height);
         
-        // Engine exhaust
-        ctx.fillStyle = '#FF4500';
-        ctx.fillRect(x + width, y + height / 2 - 3, 10, 6);
+        // Energy thrusters
+        const thrusterGlow = 0.5 + 0.5 * Math.sin(glowPhase * 2);
+        ctx.shadowColor = '#00FFFF';
+        ctx.shadowBlur = 10 * thrusterGlow;
+        ctx.fillStyle = '#00FFFF';
+        ctx.globalAlpha = 0.8;
+        ctx.fillRect(x + width, y + height / 2 - 2, 8, 4);
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        
+        // Jet outline
+        ctx.strokeStyle = '#00FFFF';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y + height / 3, width, height / 3);
         break;
         
       case 'helicopter':
-        const heliColor = size === 'small' ? '#228B22' : size === 'medium' ? '#32CD32' : '#00FF00';
+        // Sci-fi hover craft
+        const heliGradient = ctx.createLinearGradient(x, y, x + width, y + height);
+        heliGradient.addColorStop(0, size === 'small' ? '#228B22' : size === 'medium' ? '#32CD32' : '#00FF00');
+        heliGradient.addColorStop(0.5, '#00FFFF');
+        heliGradient.addColorStop(1, size === 'small' ? '#228B22' : size === 'medium' ? '#32CD32' : '#00FF00');
         
-        // Helicopter body
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = heliColor;
-          ctx.fillRect(x, y + height / 4, width, height / 2);
-        }, '#000000', 2);
+        // Main body
+        ctx.fillStyle = heliGradient;
+        ctx.fillRect(x, y + height / 4, width, height / 2);
         
-        // Main rotor (animated)
-        ctx.strokeStyle = '#2F4F4F';
-        ctx.lineWidth = 3;
-        const rotorAngle = (gameState.current.frameCount * 0.5) % (Math.PI * 2);
-        const rotorLength = width * 0.8;
+        // Energy rotor (spinning effect)
+        const rotorAngle = glowPhase * 10;
+        ctx.save();
+        ctx.translate(x + width / 2, y + height / 4);
+        ctx.rotate(rotorAngle);
+        
+        ctx.strokeStyle = '#00FF00';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.6;
         ctx.beginPath();
-        ctx.moveTo(x + width / 2 - Math.cos(rotorAngle) * rotorLength / 2, y + height / 4);
-        ctx.lineTo(x + width / 2 + Math.cos(rotorAngle) * rotorLength / 2, y + height / 4);
+        ctx.moveTo(-width / 2 - 10, 0);
+        ctx.lineTo(width / 2 + 10, 0);
         ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.restore();
         
-        // Tail rotor
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = heliColor;
-          ctx.fillRect(x - width / 2, y + height / 2, width / 2, height / 6);
-        }, '#000000', 1);
+        // Hover energy field
+        const hoverGlow = 0.3 + 0.3 * Math.sin(glowPhase);
+        ctx.shadowColor = '#00FF00';
+        ctx.shadowBlur = 15 * hoverGlow;
+        ctx.fillStyle = '#00FF00';
+        ctx.globalAlpha = 0.3;
+        ctx.fillRect(x - 5, y + height, width + 10, 5);
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
         
         // Cockpit
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = '#87CEEB';
-          ctx.fillRect(x + 5, y + height / 3, width / 3, height / 4);
-        }, '#000000', 1);
+        ctx.fillStyle = size === 'small' ? '#228B22' : size === 'medium' ? '#32CD32' : '#00FF00';
+        ctx.fillRect(x - width / 2, y + height / 2, width / 2, height / 6);
         break;
         
       case 'infantry':
+        // Sci-fi robot soldiers
         const soldierWidth = width / (size === 'small' ? 2 : size === 'medium' ? 3 : 4);
         const soldierCount = size === 'small' ? 2 : size === 'medium' ? 3 : 4;
         
         for (let i = 0; i < soldierCount; i++) {
           const soldierX = x + i * soldierWidth;
           
-          // Soldier body
-          drawWithOutline(ctx, () => {
-            ctx.fillStyle = '#8B4513';
-            ctx.fillRect(soldierX, y + height * 0.3, soldierWidth * 0.6, height * 0.7);
-          }, '#000000', 1);
+          // Robot body
+          const robotGradient = ctx.createLinearGradient(soldierX, y, soldierX + soldierWidth, y + height);
+          robotGradient.addColorStop(0, '#4A5568');
+          robotGradient.addColorStop(0.5, '#2D3748');
+          robotGradient.addColorStop(1, '#1A202C');
           
-          // Soldier head
-          drawWithOutline(ctx, () => {
-            ctx.fillStyle = '#DEB887';
-            ctx.fillRect(soldierX, y, soldierWidth * 0.6, height * 0.3);
-          }, '#000000', 1);
+          ctx.fillStyle = robotGradient;
+          ctx.fillRect(soldierX, y + height * 0.3, soldierWidth * 0.6, height * 0.7);
           
-          // Weapon (facing left)
-          drawWithOutline(ctx, () => {
-            ctx.fillStyle = '#2F4F4F';
-            ctx.fillRect(soldierX - soldierWidth * 0.3, y + height * 0.1, soldierWidth * 0.3, 3);
-          }, '#000000', 1);
-        }
-        break;
-        
-      case 'lowFlying':
-        // Low flying drone/missile
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = '#FF6347';
-          ctx.fillRect(x, y, width, height);
-        }, '#000000', 2);
-        
-        // Fins
-        drawWithOutline(ctx, () => {
-          ctx.fillStyle = '#FF6347';
-          ctx.beginPath();
-          ctx.moveTo(x + width, y);
-          ctx.lineTo(x + width + 10, y - 5);
-          ctx.lineTo(x + width + 10, y + height + 5);
-          ctx.lineTo(x + width, y + height);
-          ctx.closePath();
-        }, '#000000', 1);
-        
-        // Warning stripes
-        ctx.fillStyle = '#FFFF00';
-        for (let i = 0; i < width; i += 10) {
-          ctx.fillRect(x + i, y + height / 2 - 2, 5, 4);
+          // Robot head
+          ctx.fillStyle = '#4A5568';
+          ctx.fillRect(soldierX, y, soldierWidth * 0.6, height * 0.3);
+          
+          // Energy weapon
+          ctx.fillStyle = '#FF0000';
+          ctx.fillRect(soldierX + soldierWidth * 0.6, y + height * 0.1, soldierWidth * 0.3, 3);
+          
+          // Robot eyes
+          const eyeGlow = 0.5 + 0.5 * Math.sin(glowPhase + i);
+          ctx.shadowColor = '#FF0000';
+          ctx.shadowBlur = 5 * eyeGlow;
+          ctx.fillStyle = '#FF0000';
+          ctx.globalAlpha = 0.8;
+          ctx.fillRect(soldierX + 2, y + 5, 2, 2);
+          ctx.fillRect(soldierX + 6, y + 5, 2, 2);
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 1;
+          
+          // Energy outline
+          ctx.strokeStyle = '#00FFFF';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(soldierX, y, soldierWidth * 0.6, height);
         }
         break;
     }
   };
 
-  const drawMissile = (ctx: CanvasRenderingContext2D, missile: Missile) => {
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = '#FF4500';
-      ctx.fillRect(missile.x - 8, missile.y - 2, 16, 4);
-    }, '#000000', 1);
+  const drawSciFiMissile = (ctx: CanvasRenderingContext2D, missile: Missile) => {
+    // Sci-fi missile with energy trail
+    const missileGradient = ctx.createLinearGradient(missile.x - 8, missile.y - 2, missile.x + 8, missile.y + 2);
+    missileGradient.addColorStop(0, '#FF4500');
+    missileGradient.addColorStop(0.5, '#FFFF00');
+    missileGradient.addColorStop(1, '#FF0000');
     
-    // Missile tip
-    drawWithOutline(ctx, () => {
-      ctx.fillStyle = '#FF4500';
-      ctx.beginPath();
-      ctx.moveTo(missile.x + 8, missile.y);
-      ctx.lineTo(missile.x + 12, missile.y - 2);
-      ctx.lineTo(missile.x + 12, missile.y + 2);
-      ctx.closePath();
-    }, '#000000', 1);
+    ctx.fillStyle = missileGradient;
+    ctx.fillRect(missile.x - 8, missile.y - 2, 16, 4);
     
-    // Exhaust
-    ctx.fillStyle = '#FFD700';
-    ctx.fillRect(missile.x - 12, missile.y - 1, 4, 2);
+    // Energy nose
+    ctx.beginPath();
+    ctx.moveTo(missile.x + 8, missile.y);
+    ctx.lineTo(missile.x + 12, missile.y - 2);
+    ctx.lineTo(missile.x + 12, missile.y + 2);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Energy trail
+    const trailGradient = ctx.createLinearGradient(missile.x - 12, missile.y - 1, missile.x - 20, missile.y + 1);
+    trailGradient.addColorStop(0, '#FFFF00');
+    trailGradient.addColorStop(1, 'transparent');
+    
+    ctx.fillStyle = trailGradient;
+    ctx.fillRect(missile.x - 20, missile.y - 1, 8, 2);
+    
+    // Energy glow
+    const glowIntensity = 0.5 + 0.5 * Math.sin(gameState.current.frameCount * 0.2);
+    ctx.shadowColor = '#FFFF00';
+    ctx.shadowBlur = 10 * glowIntensity;
+    ctx.fillStyle = '#FFFF00';
+    ctx.globalAlpha = 0.6;
+    ctx.fillRect(missile.x - 8, missile.y - 2, 16, 4);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
   };
 
-  const drawExplosion = (ctx: CanvasRenderingContext2D, explosion: Explosion) => {
+  const drawSciFiExplosion = (ctx: CanvasRenderingContext2D, explosion: Explosion) => {
     ctx.save();
     ctx.globalAlpha = explosion.alpha;
     
+    // Sci-fi explosion with energy rings
     const gradient = ctx.createRadialGradient(
       explosion.x, explosion.y, 0,
       explosion.x, explosion.y, explosion.radius
     );
-    gradient.addColorStop(0, '#FFD700');
-    gradient.addColorStop(0.3, '#FF4500');
-    gradient.addColorStop(0.7, '#FF0000');
+    gradient.addColorStop(0, '#FFFFFF');
+    gradient.addColorStop(0.2, '#FFFF00');
+    gradient.addColorStop(0.4, '#FF6600');
+    gradient.addColorStop(0.6, '#FF0000');
+    gradient.addColorStop(0.8, '#FF00FF');
     gradient.addColorStop(1, 'transparent');
     
     ctx.fillStyle = gradient;
@@ -929,19 +959,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     ctx.arc(explosion.x, explosion.y, explosion.radius, 0, Math.PI * 2);
     ctx.fill();
     
-    // Explosion outline
-    ctx.strokeStyle = '#000000';
+    // Energy rings
+    ctx.strokeStyle = '#00FFFF';
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(explosion.x, explosion.y, explosion.radius, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.globalAlpha = explosion.alpha * 0.7;
+    for (let i = 1; i <= 3; i++) {
+      ctx.beginPath();
+      ctx.arc(explosion.x, explosion.y, explosion.radius * (i / 3), 0, Math.PI * 2);
+      ctx.stroke();
+    }
     
+    // Energy particles
     explosion.particles.forEach(particle => {
       ctx.globalAlpha = (particle.life / particle.maxLife) * explosion.alpha;
-      ctx.fillStyle = '#FFD700';
+      
+      // Particle glow
+      ctx.shadowColor = '#00FFFF';
+      ctx.shadowBlur = 5;
+      ctx.fillStyle = '#00FFFF';
       ctx.beginPath();
       ctx.arc(particle.x, particle.y, 2, 0, Math.PI * 2);
       ctx.fill();
+      
+      ctx.shadowBlur = 0;
     });
     
     ctx.restore();
@@ -967,13 +1007,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
           radius: 0,
           maxRadius: 50,
           alpha: 1,
-          particles: Array.from({ length: 10 }, () => ({
+          particles: Array.from({ length: 15 }, () => ({
             x: missile.x,
             y: missile.y,
-            vx: (Math.random() - 0.5) * 10,
-            vy: (Math.random() - 0.5) * 10,
-            life: 30,
-            maxLife: 30
+            vx: (Math.random() - 0.5) * 12,
+            vy: (Math.random() - 0.5) * 12,
+            life: 40,
+            maxLife: 40
           }))
         });
         
@@ -1058,7 +1098,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
         y: tank.y + tank.height / 2,
         targetX: closestObstacle.x + closestObstacle.width / 2,
         targetY: closestObstacle.y + closestObstacle.height / 2,
-        speed: 8,
+        speed: 10,
         active: true
       });
       
@@ -1067,7 +1107,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
   };
 
   const gameLoop = useCallback(() => {
-    if (gameOver || isPaused || !gameStarted) return;
+    if (gameOver || isPaused) return;
     
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1081,21 +1121,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     
     ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
-    // Update day/night cycle
     gameState.current.dayNightCycle += 0.5;
     gameState.current.timeOfDay = (Math.sin(gameState.current.dayNightCycle * 0.001) + 1) / 2;
     
-    // Update background offset for parallax
     gameState.current.backgroundOffset += gameState.current.gameSpeed * 0.5;
     
-    // Switch environments periodically
-    if (gameState.current.frameCount % 10800 === 0) { // Every 3 minutes
-      gameState.current.environmentType = gameState.current.environmentType === 'forest' ? 'urban' : 'forest';
-    }
+    drawSciFiBackground(ctx);
     
-    drawBackground(ctx);
-    
-    // Handle tank physics
     if (keys.space && tank.onGround) {
       tank.velocityY = JUMP_FORCE;
       tank.onGround = false;
@@ -1112,9 +1144,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     
     spawnObstacle();
     
-    // Move obstacles at increased speed for better gameplay
     obstacles.forEach((obstacle, index) => {
-      obstacle.x -= gameState.current.gameSpeed * 1.2; // Increased obstacle speed by 20%
+      obstacle.x -= gameState.current.gameSpeed;
       
       if (obstacle.x + obstacle.width < tank.x && !obstacle.countedForMissile && gameState.current.missilesReady) {
         gameState.current.dodgedObstaclesCount++;
@@ -1146,12 +1177,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
       return;
     }
     
-    // Improved speed progression
-    const newSpeed = initialSpeed + Math.floor(gameState.current.frameCount / 1200) * 0.4; // Faster progression
-    gameState.current.gameSpeed = Math.min(newSpeed, MAX_GAME_SPEED);
-    setGameSpeed(gameState.current.gameSpeed);
+    const newSpeed = Math.min(initialSpeed + Math.floor(gameState.current.frameCount / 1800) * 0.5, 10);
+    gameState.current.gameSpeed = newSpeed;
+    setGameSpeed(newSpeed);
     
-    if (gameState.current.frameCount > 0 && gameState.current.frameCount % 4800 === 0) { // Every 80 seconds
+    if (gameState.current.frameCount > 0 && gameState.current.frameCount % 6000 === 0) {
       gameState.current.minObstacleSpawnInterval = Math.max(OBSTACLE_SPAWN_MIN, gameState.current.minObstacleSpawnInterval - OBSTACLE_SPAWN_DECREASE_RATE);
       gameState.current.maxObstacleSpawnInterval = Math.max(OBSTACLE_SPAWN_MIN, gameState.current.maxObstacleSpawnInterval - OBSTACLE_SPAWN_DECREASE_RATE * 2);
     }
@@ -1163,13 +1193,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     const currentScore = Math.floor(gameState.current.frameCount / 6);
     setScore(currentScore);
     
-    drawTank(ctx);
-    obstacles.forEach(obstacle => drawObstacle(ctx, obstacle));
-    gameState.current.missiles.forEach(missile => drawMissile(ctx, missile));
-    gameState.current.explosions.forEach(explosion => drawExplosion(ctx, explosion));
+    drawSciFiTank(ctx);
+    obstacles.forEach(obstacle => drawSciFiObstacle(ctx, obstacle));
+    gameState.current.missiles.forEach(missile => drawSciFiMissile(ctx, missile));
+    gameState.current.explosions.forEach(explosion => drawSciFiExplosion(ctx, explosion));
     
     animationRef.current = requestAnimationFrame(gameLoop);
-  }, [gameOver, isPaused, gameStarted, initialSpeed, highScore]);
+  }, [gameOver, isPaused, highScore, initialSpeed]);
 
   const resetGame = () => {
     gameState.current = {
@@ -1177,9 +1207,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
       obstacles: [],
       missiles: [],
       explosions: [],
-      trees: gameState.current.trees,
-      buildings: gameState.current.buildings,
-      mountains: gameState.current.mountains,
+      sciFiStructures: gameState.current.sciFiStructures,
       lastObstacleX: CANVAS_WIDTH,
       keys: { space: false, up: false },
       gameSpeed: initialSpeed,
@@ -1195,15 +1223,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
       maxObstacleSpawnInterval: 180,
       missileCount: 0,
       dodgedObstaclesCount: 0,
-      missilesReady: false,
-      sunMoonPosition: { x: 200, y: 80 },
-      environmentType: 'forest',
-      environmentTransition: 0
+      missilesReady: false
     };
     setScore(0);
     setGameOver(false);
     setGameSpeed(initialSpeed);
-    setGameStarted(true);
   };
 
   const togglePause = () => {
@@ -1211,12 +1235,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
   };
 
   const startGame = () => {
-    setGameStarted(true);
-    setShowSettings(false);
+    gameState.current.gameSpeed = initialSpeed;
+    setGameSpeed(initialSpeed);
+    setShowSpeedSelector(false);
+    resetGame();
   };
 
   useEffect(() => {
-    initializeBackground();
+    initializeSciFiStructures();
     
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -1249,7 +1275,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
 
-    if (!gameOver && !isPaused && gameStarted) {
+    if (!gameOver && !isPaused && !showSpeedSelector) {
       animationRef.current = requestAnimationFrame(gameLoop);
     }
 
@@ -1260,69 +1286,115 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [gameLoop, gameOver, isPaused, gameStarted, initializeBackground]);
+  }, [gameLoop, gameOver, isPaused, showSpeedSelector, initializeSciFiStructures]);
 
-  // Show landscape mode requirement for mobile devices in portrait mode
-  if (isMobile && isPortrait) {
+  // Show landscape mode requirement for mobile
+  if (isMobile && !isLandscape) {
     return (
-      <div className="fixed inset-0 bg-black flex items-center justify-center z-50">
-        <div className="text-center text-white p-8 max-w-md mx-4">
-          {/* Animated rotation icon */}
-          <div className="mb-8 flex justify-center">
+      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center z-50 p-4">
+        <div className="bg-gray-800/90 backdrop-blur-sm border-2 border-sky-500 rounded-2xl p-8 max-w-md text-center">
+          {/* Animated phone rotation icon */}
+          <div className="relative mb-6 flex justify-center">
             <div className="relative">
-              <div className="w-24 h-16 border-4 border-sky-400 rounded-lg flex items-center justify-center animate-pulse">
-                <span className="text-sky-400 font-bold text-xs">PHONE</span>
-              </div>
-              <div className="absolute -right-8 top-1/2 transform -translate-y-1/2">
-                <RotateCw className="w-8 h-8 text-emerald-400 animate-spin" />
-              </div>
+              <Smartphone className="w-16 h-16 text-sky-400" />
+              <RotateCw className="w-8 h-8 text-emerald-400 absolute -top-2 -right-2 animate-spin" />
             </div>
           </div>
           
           {/* Title */}
-          <h2 className="text-3xl font-orbitron font-bold mb-4">
+          <h2 className="text-2xl font-orbitron font-bold mb-4">
             <span className="bg-gradient-to-r from-sky-400 to-emerald-400 bg-clip-text text-transparent">
               Rotate Your Device
             </span>
           </h2>
           
-          {/* Message */}
-          <div className="space-y-4 mb-8">
-            <p className="text-xl text-gray-300">
-              For the best tank combat experience, please rotate your device to 
-              <span className="text-sky-400 font-bold"> landscape mode</span>.
-            </p>
-            
-            <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-4">
-              <p className="text-sm text-gray-400">
-                🎮 Landscape mode provides:
-              </p>
-              <ul className="text-sm text-gray-300 mt-2 space-y-1">
-                <li>• Better visibility of obstacles</li>
-                <li>• Improved touch controls</li>
-                <li>• Enhanced gameplay experience</li>
-              </ul>
+          {/* Description */}
+          <p className="text-gray-300 mb-6 leading-relaxed">
+            For the best tank combat experience, please rotate your device to landscape mode.
+          </p>
+          
+          {/* Benefits */}
+          <div className="bg-gray-700/50 rounded-lg p-4 mb-6">
+            <h3 className="text-sky-400 font-bold mb-3">Landscape Mode Benefits:</h3>
+            <ul className="text-sm text-gray-300 space-y-2 text-left">
+              <li>• Better visibility of incoming obstacles</li>
+              <li>• Improved touch controls and responsiveness</li>
+              <li>• Enhanced gameplay experience</li>
+            </ul>
+          </div>
+          
+          {/* Visual guide */}
+          <div className="flex items-center justify-center space-x-4 mb-6">
+            <div className="flex flex-col items-center">
+              <div className="w-8 h-12 border-2 border-gray-500 rounded-sm mb-1"></div>
+              <span className="text-xs text-gray-400">Portrait</span>
+            </div>
+            <div className="text-sky-400">→</div>
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-8 border-2 border-sky-400 rounded-sm mb-1"></div>
+              <span className="text-xs text-sky-400">Landscape</span>
             </div>
           </div>
           
-          {/* Instructions */}
-          <div className="flex items-center justify-center space-x-4 text-sm text-gray-400">
-            <div className="flex items-center space-x-2">
-              <div className="w-6 h-4 border border-gray-500 rounded"></div>
-              <span>→</span>
-              <div className="w-4 h-6 border border-sky-400 rounded"></div>
-            </div>
-            <span>Turn sideways</span>
-          </div>
-          
-          {/* Close button */}
+          {/* Exit option */}
           <button
             onClick={onClose}
-            className="mt-8 bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-bold transition-all duration-300 flex items-center space-x-2 mx-auto"
+            className="w-full bg-gray-700 hover:bg-gray-600 text-white py-3 px-6 rounded-lg font-bold transition-all duration-300"
           >
-            <X className="w-5 h-5" />
-            <span>Exit Game</span>
+            Exit Game
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Speed selector screen
+  if (showSpeedSelector) {
+    return (
+      <div className="fixed inset-0 bg-black flex items-center justify-center z-50">
+        <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-2 border-sky-500 rounded-2xl p-8 max-w-md mx-4">
+          <h2 className="text-3xl font-orbitron font-bold text-center mb-6">
+            <span className="bg-gradient-to-r from-sky-400 to-emerald-400 bg-clip-text text-transparent">
+              Select Initial Speed
+            </span>
+          </h2>
+          
+          <div className="mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <span className="text-gray-300">Speed:</span>
+              <span className="text-sky-400 font-bold text-xl">{initialSpeed.toFixed(1)}x</span>
+            </div>
+            
+            <input
+              type="range"
+              min="3.0"
+              max="6.0"
+              step="0.1"
+              value={initialSpeed}
+              onChange={(e) => setInitialSpeed(parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+            />
+            
+            <div className="flex justify-between text-xs text-gray-400 mt-2">
+              <span>3.0x (Slow)</span>
+              <span>6.0x (Fast)</span>
+            </div>
+          </div>
+          
+          <div className="flex space-x-4">
+            <button
+              onClick={startGame}
+              className="flex-1 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 text-white px-6 py-3 rounded-lg font-bold transition-all duration-300 transform hover:scale-105"
+            >
+              Start Game
+            </button>
+            <button
+              onClick={onClose}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-6 py-3 rounded-lg font-bold transition-all duration-300"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1331,6 +1403,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 bg-black flex items-center justify-center z-50">
       <div className="relative">
+        {/* Game Canvas */}
         <canvas
           ref={canvasRef}
           width={CANVAS_WIDTH}
@@ -1338,7 +1411,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
           className="border-2 border-sky-400 rounded-lg game-canvas"
         />
         
-        {/* Game UI Overlay - Horizontal Layout */}
+        {/* Game UI Overlay */}
         <div className="absolute top-4 left-4 text-white font-orbitron">
           <div className="bg-black/50 backdrop-blur-sm rounded-lg p-3">
             <div className="flex items-center space-x-6">
@@ -1355,12 +1428,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
         {/* Controls */}
         <div className="absolute top-4 right-4 flex space-x-2">
           <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="bg-black/50 backdrop-blur-sm text-white p-2 rounded-lg hover:bg-black/70 transition-colors"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
-          <button
             onClick={togglePause}
             className="bg-black/50 backdrop-blur-sm text-white p-2 rounded-lg hover:bg-black/70 transition-colors"
           >
@@ -1374,107 +1441,29 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
           </button>
         </div>
 
-        {/* Action Key Legend - Top Right */}
-        <div className="absolute top-16 right-4 text-white font-rajdhani">
+        {/* Fire Button for Mobile */}
+        {isMobile && gameState.current.missilesReady && (
+          <button
+            onClick={fireMissile}
+            className="absolute bottom-4 right-4 bg-red-500/80 backdrop-blur-sm text-white p-4 rounded-full hover:bg-red-500 transition-colors text-lg font-bold"
+          >
+            🚀 FIRE
+          </button>
+        )}
+
+        {/* Instructions */}
+        <div className="absolute bottom-4 left-4 text-white font-rajdhani">
           <div className="bg-black/50 backdrop-blur-sm rounded-lg p-3">
             <div className="text-sm space-y-1">
               <div><span className="text-sky-400">SPACE</span> - Jump</div>
               <div><span className="text-sky-400">F</span> - Fire Missile</div>
               <div><span className="text-sky-400">P</span> - Pause</div>
+              {!gameState.current.missilesReady && (
+                <div><span className="text-red-400">Missiles unlock at 100 points</span></div>
+              )}
             </div>
           </div>
         </div>
-
-        {/* Fire Missile Button */}
-        {gameState.current.missilesReady && gameState.current.missileCount > 0 && gameStarted && (
-          <div className="absolute bottom-4 right-4">
-            <button
-              onClick={fireMissile}
-              className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white p-3 rounded-lg font-bold transition-all duration-300 transform hover:scale-105 flex items-center space-x-2"
-            >
-              <Target className="w-5 h-5" />
-              <span>FIRE</span>
-            </button>
-          </div>
-        )}
-
-        {/* Settings Panel */}
-        {showSettings && (
-          <div className="absolute top-16 right-4 bg-gray-900 border-2 border-sky-500 rounded-xl p-6 text-white font-orbitron min-w-80">
-            <h3 className="text-xl font-bold text-sky-400 mb-4">Game Settings</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Initial Speed: <span className="text-sky-400 font-bold">{initialSpeed.toFixed(1)}x</span>
-                </label>
-                <input
-                  type="range"
-                  min="3.0"
-                  max="6.0"
-                  step="0.1"
-                  value={initialSpeed}
-                  onChange={(e) => setInitialSpeed(parseFloat(e.target.value))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-                  style={{
-                    background: `linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ${((initialSpeed - 3) / 3) * 100}%, #374151 ${((initialSpeed - 3) / 3) * 100}%, #374151 100%)`
-                  }}
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>3.0x</span>
-                  <span>4.5x</span>
-                  <span>6.0x</span>
-                </div>
-              </div>
-              
-              <div className="text-xs text-gray-400">
-                <p>• Game speed will increase up to {MAX_GAME_SPEED}x as you progress</p>
-                <p>• Higher initial speed = more challenging start</p>
-              </div>
-              
-              <div className="flex space-x-3 mt-6">
-                <button
-                  onClick={startGame}
-                  className="flex-1 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 text-white px-4 py-2 rounded-lg font-bold transition-all duration-300 transform hover:scale-105"
-                >
-                  Start Game
-                </button>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-bold transition-all duration-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Pre-Game Screen */}
-        {!gameStarted && !showSettings && (
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center">
-            <div className="bg-gray-900 border-2 border-sky-500 rounded-xl p-8 text-center max-w-md">
-              <h2 className="text-3xl font-orbitron font-bold text-sky-400 mb-6">Vanguard Velocity</h2>
-              <p className="text-white mb-6">Configure your tank and prepare for battle!</p>
-              <div className="flex space-x-4 justify-center">
-                <button
-                  onClick={() => setShowSettings(true)}
-                  className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white px-6 py-3 rounded-lg font-bold transition-all duration-300 transform hover:scale-105 flex items-center space-x-2"
-                >
-                  <Settings className="w-5 h-5" />
-                  <span>Settings</span>
-                </button>
-                <button
-                  onClick={startGame}
-                  className="bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 text-white px-6 py-3 rounded-lg font-bold transition-all duration-300 transform hover:scale-105 flex items-center space-x-2"
-                >
-                  <Play className="w-5 h-5" />
-                  <span>Quick Start</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Game Over Screen */}
         {gameOver && (
@@ -1490,7 +1479,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
               </div>
               <div className="flex space-x-4 justify-center">
                 <button
-                  onClick={resetGame}
+                  onClick={() => setShowSpeedSelector(true)}
                   className="bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 text-white px-6 py-3 rounded-lg font-bold transition-all duration-300 transform hover:scale-105 flex items-center space-x-2"
                 >
                   <RotateCcw className="w-5 h-5" />
@@ -1508,7 +1497,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ onClose }) => {
         )}
 
         {/* Pause Screen */}
-        {isPaused && !gameOver && gameStarted && (
+        {isPaused && !gameOver && (
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center">
             <div className="bg-gray-900 border-2 border-sky-500 rounded-xl p-8 text-center">
               <h2 className="text-3xl font-orbitron font-bold text-sky-400 mb-4">PAUSED</h2>
